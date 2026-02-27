@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>グレースケール画像処理ツール</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>グレースケール画像処理ツール</h1>
+
+    <!-- Step 1: Load & Crop -->
+    <section class="step" id="section-upload">
+      <h2><span class="step-badge">1</span> 画像の読み込みと切り取り範囲の選択</h2>
+      <div class="upload-area">
+        <input type="file" id="imageUpload" accept="image/*" hidden>
+        <button class="btn" onclick="document.getElementById('imageUpload').click()">
+          画像ファイルを選択
+        </button>
+        <p class="hint">グレースケール画像（JPEG / PNG など）を選択してください</p>
+      </div>
+
+      <div id="cropArea" class="hidden">
+        <p class="hint">画像上でドラッグして切り取り範囲を選択し、ボタンを押してください</p>
+        <div class="canvas-wrapper">
+          <canvas id="originalCanvas"></canvas>
+          <canvas id="overlayCanvas" class="overlay"></canvas>
+        </div>
+        <div class="controls">
+          <button class="btn btn-primary" id="applyCropBtn" disabled>
+            切り取りとメディアンフィルタを適用
+          </button>
+          <label class="kernel-label">
+            カーネルサイズ:
+            <select id="kernelSize">
+              <option value="3" selected>3×3</option>
+              <option value="5">5×5</option>
+              <option value="7">7×7</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Median Filter Result -->
+    <section class="step hidden" id="section-filter">
+      <h2><span class="step-badge">2</span> メディアンフィルタ適用後</h2>
+      <div id="filterStatus" class="status-bar"></div>
+      <div class="image-row">
+        <div class="image-card">
+          <h3>切り取り後（フィルタ適用前）</h3>
+          <canvas id="croppedCanvas"></canvas>
+        </div>
+        <div class="image-card">
+          <h3>メディアンフィルタ適用後</h3>
+          <canvas id="filteredCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: Level Adjustment & Histogram -->
+    <section class="step hidden" id="section-level">
+      <h2><span class="step-badge">3</span> レベル調整とヒストグラム</h2>
+      <div id="adjustmentInfo" class="info-box"></div>
+      <div class="image-row">
+        <div class="image-card">
+          <h3>レベル調整後の画像</h3>
+          <canvas id="adjustedCanvas"></canvas>
+        </div>
+        <div class="image-card">
+          <h3>ヒストグラム</h3>
+          <canvas id="histogramCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 4–6: Thresholding -->
+    <section class="step hidden" id="section-threshold">
+      <h2><span class="step-badge">4–6</span> 閾値設定と二値化</h2>
+      <p class="hint">
+        ヒストグラムを参考に閾値を設定してください。<br>
+        0〜閾値の範囲が<strong>黒画素</strong>、それ以外が<strong>白画素</strong>になります。
+      </p>
+
+      <div class="threshold-controls">
+        <div class="threshold-group">
+          <label>閾値1 (t1): <strong id="t1Display">128</strong></label>
+          <input type="range" id="t1Slider" min="0" max="255" value="128">
+          <input type="number" id="t1Input" min="0" max="255" value="128" class="num-input">
+        </div>
+        <div class="threshold-group">
+          <label>閾値2 (t2): <strong id="t2Display">200</strong></label>
+          <input type="range" id="t2Slider" min="0" max="255" value="200">
+          <input type="number" id="t2Input" min="0" max="255" value="200" class="num-input">
+        </div>
+      </div>
+
+      <div class="histogram-block">
+        <h3>ヒストグラム（閾値マーカー付き）</h3>
+        <canvas id="thresholdHistogramCanvas"></canvas>
+      </div>
+
+      <div class="image-row">
+        <div class="image-card">
+          <h3>二値化1 (t1 = <span id="t1Label">128</span>)</h3>
+          <canvas id="binary1Canvas"></canvas>
+          <p class="pixel-count">白画素数: <strong id="whiteCount1">—</strong></p>
+        </div>
+        <div class="image-card">
+          <h3>二値化2 (t2 = <span id="t2Label">200</span>)</h3>
+          <canvas id="binary2Canvas"></canvas>
+          <p class="pixel-count">白画素数: <strong id="whiteCount2">—</strong></p>
+        </div>
+      </div>
+
+      <button class="btn btn-success" id="addToTableBtn">テーブルに追加</button>
+    </section>
+
+    <!-- Step 7–8: Results Table & CSV -->
+    <section class="step" id="section-table">
+      <h2><span class="step-badge">7–8</span> 結果テーブルと CSV 出力</h2>
+      <div class="table-container">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>ファイル名</th>
+              <th>白画素数（t1）</th>
+              <th>白画素数（t2）</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr class="empty-row">
+              <td colspan="3">データがありません。画像を処理してテーブルに追加してください。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <button class="btn" id="exportCSVBtn" disabled>CSV エクスポート</button>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
