@@ -317,7 +317,7 @@ section_threshold = html.Section(
                 html.Label(["閾値1 (t1): ",
                             html.Strong(id="t1-display", children="128")]),
                 dcc.Slider(id="t1-slider", min=0, max=255, step=1, value=128,
-                          marks=None, updatemode="drag",
+                          marks=None,
                           tooltip={"placement": "bottom",
                                    "always_visible": True}),
             ]),
@@ -325,7 +325,7 @@ section_threshold = html.Section(
                 html.Label(["閾値2 (t2): ",
                             html.Strong(id="t2-display", children="200")]),
                 dcc.Slider(id="t2-slider", min=0, max=255, step=1, value=200,
-                          marks=None, updatemode="drag",
+                          marks=None,
                           tooltip={"placement": "bottom",
                                    "always_visible": True}),
             ]),
@@ -373,6 +373,8 @@ section_table = html.Section(className="step", children=[
         id="results-table",
         columns=[
             {"name": "ファイル名",    "id": "filename"},
+            {"name": "閾値1 (t1)",   "id": "t1"},
+            {"name": "閾値2 (t2)",   "id": "t2"},
             {"name": "白画素数（t1）", "id": "count1"},
             {"name": "白画素数（t2）", "id": "count2"},
             {"name": "差分（t1−t2）", "id": "diff"},
@@ -574,12 +576,19 @@ def on_apply(n_clicks, original_b64, crop, kernel_size):
     )
 
 
-# 4a. Threshold histogram marker – clientside (instant) ----------
+# 4a. Threshold histogram marker + labels – clientside (instant on drag) ----
+#  drag_value はドラッグ中にリアルタイム更新される。
+#  value はマウスリリース時のみ更新される。
 app.clientside_callback(
     """
-    function(t1, t2, histogram) {
+    function(drag1, drag2, val1, val2, histogram) {
+        // drag_value はドラッグ開始前は null なので value でフォールバック
+        var t1 = (drag1 != null) ? drag1 : val1;
+        var t2 = (drag2 != null) ? drag2 : val2;
         if (!histogram || histogram.length === 0) {
-            return window.dash_clientside.no_update;
+            return [window.dash_clientside.no_update,
+                    String(t1), String(t2),
+                    '二値化1 (t1 = '+t1+')', '二値化2 (t2 = '+t2+')'];
         }
         var maxH = Math.max(...histogram);
         if (maxH === 0) maxH = 1;
@@ -597,10 +606,9 @@ app.clientside_callback(
             annotations.push({x:t2, y:maxH*1.12, text:'t2='+t2,
                               showarrow:false, font:{color:'#2980b9', size:11}});
         }
-        // Build bar trace
         var x = []; var y = [];
         for (var i = 0; i < 256; i++) { x.push(i); y.push(histogram[i]); }
-        return {
+        var fig = {
             data: [{type:'bar', x:x, y:y,
                     marker:{color:'black', line:{width:0}}, width:1}],
             layout: {
@@ -613,35 +621,38 @@ app.clientside_callback(
                 height: 260
             }
         };
+        return [fig, String(t1), String(t2),
+                '二値化1 (t1 = '+t1+')', '二値化2 (t2 = '+t2+')'];
     }
     """,
-    Output("threshold-histogram-graph", "figure"),
-    [Input("t1-slider", "value"),
+    [Output("threshold-histogram-graph", "figure"),
+     Output("t1-display", "children"),
+     Output("t2-display", "children"),
+     Output("binary1-title", "children"),
+     Output("binary2-title", "children")],
+    [Input("t1-slider", "drag_value"),
+     Input("t2-slider", "drag_value"),
+     Input("t1-slider", "value"),
      Input("t2-slider", "value")],
     State("store-histogram", "data"),
 )
 
-# 4b. Threshold images – server callback -------------------------
+# 4b. Threshold images – server callback (mouseup only) -----------
 @app.callback(
     [Output("binary1-img", "src"),
      Output("binary2-img", "src"),
      Output("diff-img", "src"),
      Output("white-count-1", "children"),
      Output("white-count-2", "children"),
-     Output("diff-count", "children"),
-     Output("binary1-title", "children"),
-     Output("binary2-title", "children"),
-     Output("t1-display", "children"),
-     Output("t2-display", "children")],
+     Output("diff-count", "children")],
     [Input("t1-slider", "value"),
      Input("t2-slider", "value")],
-    [State("store-adjusted", "data"),
-     State("store-histogram", "data")],
+    State("store-adjusted", "data"),
     prevent_initial_call=True,
 )
-def on_threshold(t1, t2, adjusted_b64, histogram):
-    if not adjusted_b64 or not histogram:
-        return [no_update] * 10
+def on_threshold(t1, t2, adjusted_b64):
+    if not adjusted_b64:
+        return [no_update] * 6
 
     adjusted = b64_to_arr(adjusted_b64)
 
@@ -692,10 +703,6 @@ def on_threshold(t1, t2, adjusted_b64, histogram):
         f"{count_white(bin1):,}",
         f"{count_white(bin2):,}",
         f"{diff_count:,}",
-        f"二値化1 (t1 = {t1})",
-        f"二値化2 (t2 = {t2})",
-        str(t1),
-        str(t2),
     )
 
 
@@ -723,6 +730,8 @@ def on_add_table(n_clicks, filename, t1, t2, cnt1, cnt2, table_data):
     ratio_val = (diff_val / c1 * 100) if c1 > 0 else 0.0
     table_data.append({
         "filename": filename,
+        "t1": t1,
+        "t2": t2,
         "count1": f"{c1:,}",
         "count2": f"{c2:,}",
         "diff": f"{diff_val:,}",
@@ -743,10 +752,13 @@ def on_export(n_clicks, table_data):
         return no_update
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["ファイル名", "白画素数(t1)", "白画素数(t2)",
+    writer.writerow(["ファイル名", "閾値1(t1)", "閾値2(t2)",
+                     "白画素数(t1)", "白画素数(t2)",
                      "差分(t1-t2)", "差分/t1(%)"])
     for row in table_data:
-        writer.writerow([row["filename"], row["count1"], row["count2"],
+        writer.writerow([row["filename"],
+                        row.get("t1", ""), row.get("t2", ""),
+                        row["count1"], row["count2"],
                         row.get("diff", ""), row.get("ratio", "")])
     return dict(
         content="\ufeff" + buf.getvalue(),
